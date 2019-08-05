@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+import numpy as np
+import chimera
+import VolumeViewer
+import VolumeData
+from VolumeData import Grid_Data
+from VolumeData import Array_Grid_Data
+import MoleculeMap
+from MoleculeMap import molecule_map
+from VolumeViewer import volume as volume
+
+#this program
+#1.extracts leu angle data from the “DatasetForBBDepRL2010” file and
+#save each residue's data to the given file with the name of the protein, chain
+#index, and residue index, as the name of the file, and angles are saved in
+#numpy.array format
+#2.at the same time save the corresponding boxes with the same name as angle files
+#to the given path
+
+
+#--------------------------------------------------------------------
+#source: '/Users/xuguangxuan/Documents/DatasetForBBDepRL2010.txt'
+def extract_save_leu(file_source_path = '/Users/xuguangxuan/Documents/DatasetForBBDepRL2010.txt',
+                     angles_to_path = '/Users/xuguangxuan/Desktop/testangles',
+                     box_to_path = '/Users/xuguangxuan/Desktop/testbox'):
+    
+    with open(file_source_path) as file:
+        line = file.readline()
+        count = 0
+        empty = ' '
+
+        #initialize a molecule and a map, so that there is a memory and something to close
+        #---------------------------------------------------------------------
+        memory = '3hhbA'
+        prot = chimera.openModels.open('3hhb', type = 'PDB')
+        #fetch the protein molecule
+        molecule = prot[0]
+        x = []
+        for res in molecule.residues:
+            x = x+res.atoms
+        full_map =  molecule_map(atoms = x, resolution = 3, showDialog = False)
+        #--------------------------------------------------------------------        
+        
+        while line:
+            ls = line.split('\t')
+            if (count> 255830) and (line[:3] == 'LEU') and (ls[2] == 'A') and (ls[3].isdigit()):
+                #------------------------
+                            
+                position = ls[3]
+                angles = convert_to_float(ls[5:12])
+                amino_acid_name = ls[0]
+                molecule_name = ls[1]
+                chain_id = ls[2]
+                chain_num = convert_chain_id_to_int(chain_id)
+             
+                if memory != molecule_name+chain_id:
+                    if len(prot)<=chain_num:
+                        pass
+                    else:
+                        volume.remove_volumes([full_map])
+                        #close volume data
+                        chimera.openModels.close(molecule)
+                        #close PDB model
+                        prot = chimera.openModels.open(molecule_name, type = 'PDB')
+                        molecule=prot[chain_num]
+                        #fetch the protein molecule
+                        try:
+                            res_id = position_to_id(molecule, int(position))
+                            #convert position to res_id that can be used to index residues in a molecule
+                            
+                            x = []
+                            for res in molecule.residues:
+                                x = x+res.atoms
+                            full_map =  molecule_map(atoms = x, resolution = 3, showDialog = False)
+                            #fetch the full map of the molecule
+
+                            name = molecule_name+chain_id + amino_acid_name + str(res_id) + '#' + str(count)
+                            #generate the name for this residue
+
+
+                            if len(molecule.residues)>res_id:
+                            #check if residue id exceeds the range
+                            
+                                res = molecule.residues[res_id]
+                                np.save(angles_to_path + '/'+ name , angles)
+                                #save angles                     
+                                save_box(full_map, res, box_to_path, name)
+                                #save box
+                            else:
+                                print name + 'has res_id that exceeds the range of residues\n'
+                                print 'real name of the current molecule:' + molecule.name + '\n'
+                                print res_id
+                                
+                        except Exception:
+                            pass
+                        
+                        #__________________________________________________________body
+                else:
+                    try:
+                        res_id = position_to_id(molecule, int(position))
+                    
+                        #convert position to res_id that can be used to index residues in a molecule                    
+                        if len(molecule.residues)>res_id:
+                        #check if residue id exceeds the range
+                        
+                            name = molecule_name+chain_id + amino_acid_name + str(res_id) + '#' + str(count)
+                            #generate the name for this residue
+
+                            res = molecule.residues[res_id]    
+                            np.save(angles_to_path + '/ '+ name , angles)
+                            #save angles
+                            save_box(full_map, res, box_to_path, name)
+                            #save box
+                        else:
+                            print name + 'has res_id that exceeds the range of residues'
+                    except Exception:
+                        pass
+
+
+              #______________________________________________________________end                  
+
+                memory = molecule_name+chain_id
+                #setup a memory to test if the next residue is on the same molecule
+                #if it is, then do no close the molecule.
+                    
+            count+=1
+            line = file.readline()
+            #move to another line
+            
+    
+
+
+
+
+def save_box(full_map, res, path, name):
+    #get boxes of leu in the protein molecule and save to
+    #the given path
+       
+    
+    #find the residue we want
+    center_of_residue = res_center(res)
+    #find the coordinate of the residue's center
+    box_matrix = cut_box(full_map, center_of_residue)
+    #cut
+    np.save(str(path) + '/' + name + '_box', box_matrix)
+    #save the resulting matrix
+      
+
+
+#--------------------------------------------------------------------
+#helper functions
+class Chain_id_Exception(Exception):
+    pass
+
+class NoCorrespondingPosition(Exception):
+    pass
+
+
+def position_to_id(molecule, position):
+    cn = 0
+    for res in molecule.residues:
+        if cn == len(molecule.residues)-1:
+            if res.id.position != position:
+                raise NoCorrespondingPosition
+        
+        if res.id.position == position:
+            return cn
+        cn+=1
+        
+
+def convert_to_float(ls):
+    #takes a list of str and convert each element to float
+    n=[]
+    for x in ls:
+        n.append(float(x))
+    return n
+
+def convert_chain_id_to_int(chain_id):
+    if chain_id =='A':
+        return 0
+    elif chain_id =='B':
+        return 1
+    elif chain_id == 'C':
+        return 2
+    elif chain_id == 'D':
+        return 3
+    elif chain_id =='E':
+        return 4
+    elif chain_id =='F':
+        return 5
+    elif chain_id == 'G':
+        return 6
+    elif chain_id == 'H':
+        return 7
+    elif chain_id == '':
+        return 7
+    else:
+        raise Chain_id_Exception('the chain number exceeds expectation')
+    
+
+
+
+#vd.xyz_to_ijk(res_center(res))
+def res_center(res):
+    #res is a residue
+    #res_center takes a residue and produces its center coord
+    count = 0
+    x=0
+    y=0
+    z=0
+    for atom in res.atoms:
+        x += atom.coord()[0]
+        y += atom.coord()[1]
+        z += atom.coord()[2]
+        count +=1
+    return (x/count, y/count, z/count)
+
+def bounds(coord):
+    #takes the coord of the center of res, and produce the
+    # min,max of the box
+    (x,y,z) = coord
+    minxyz =(x-5.0, y-5.0, z-5.0)
+    maxxyz =(x+5.0, y+5.0, z+5.0)
+    step =(1,1,1)# step is default to (1,1,1)
+    return (minxyz,maxxyz,step)
+                
+
+
+    
+def cut_box(full_map, center):
+    #cut_box takes a chain selected molecule and the center of box we want to cut
+    # and outputs the matrix of our box
+    # the box is default to dimension 10*10*10
+    #the above lines produces a full map of the molecule
+    ijk_center = full_map.data.xyz_to_ijk(center)
+    #convert the xyz_coordinate to ijk_matrix coordinate
+    ijk_bound = bounds(ijk_center)
+    #ijk_bound is the limit of the 10*10*10 box we want to extract
+    #ijk_bound is a tupe in the form (minxyz,maxxyz,step)
+    full_map.new_region(ijk_min = ijk_bound[0], ijk_max = ijk_bound[1],
+                        ijk_step = ijk_bound[2], show = False)
+    #cut the full_map to a map of the box's region
+    mx =  full_map.matrix()
+    
+
+    return mx
+    
+
+    
+
+
+
+
+
+
+
